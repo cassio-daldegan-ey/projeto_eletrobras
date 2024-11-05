@@ -1,1 +1,4 @@
-PATH_FOTOS = "C:/Users/KG858HY/OneDrive - EY/Desktop/dados_eletrobras/Imagens termográficas/"
+PATH_VIDEOS = "C:/Users/KG858HY/EY/Projeto Eletrobras/dados/"
+PATH_PROJETO = "C:/Users/KG858HY/EY/Projeto Eletrobras/"
+PATH_SRC = "C:/Users/KG858HY/EY/Projeto Eletrobras/src_eletrobras/projeto_eletrobras/"
+PATH_TESSERACT = "C:/Users/KG858HY/AppData/Local/Programs/Tesseract-OCR/tesseract.exe"

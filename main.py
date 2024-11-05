@@ -7,14 +7,16 @@ de dados até a previsao.
 
 import os
 from dotenv import load_dotenv
-from data_processing import import_fotos
-
-#Tenho que achar o pacote que salva o comando da pasta onde esta o arquivo
-#esse arquivo do main e retornar uma pasta antes.
-PATH_PROJETO = "C:/Users/KG858HY/OneDrive - EY/Desktop/projeto_eletrobras/projeto_eletrobras/"
 
 load_dotenv(
-    PATH_PROJETO+"env"
+    "C:/Users/KG858HY/EY/Projeto Eletrobras/src_eletrobras/projeto_eletrobras/env"
 )
 
-df_fotos = import_fotos(os.chdir(os.getenv("PATH_FOTOS")))
+os.chdir(os.getenv("PATH_SRC"))
+
+from data_processing import (
+    extracao_dados,
+    )
+
+df = extracao_dados(os.getenv("PATH_VIDEOS"))
+
