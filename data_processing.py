@@ -539,6 +539,72 @@ def export_shap_values(df_shap: pd.DataFrame, flagCloud: bool):
         df_datas.to_excel(env["PATH_OUTPUTS"] + "base_datas.xlsx")
 
 
+def alerts_limits(df_shap: pd.DataFrame, flagCloud: bool):
+    """A funcao alerts_limits gera os limites de temperatura a partir do qual será
+    gerado um alerta.
+
+    Args:
+        df_shap: Base de dados com o histórico de temperaturas reais e com as
+        variaveis utilizadas no feature importance.
+    """
+    print("Gerando os limites para os alertas...")
+
+    f = open("env.json")
+    env = json.load(f)
+
+    # Vamos filtrar apenas os Reatores e Tiristores
+    df_shap = df_shap.loc[df_shap["Componente"].str.contains("Reator|Tiristor")]
+    df_shap.loc[:,"Reator|Tiristor"] = np.where(df_shap['Componente'].str.contains('Reator'),'Reator','Tiristor')
+    del df_shap["Componente"]
+    
+    # Vamos deletar uma variável cujos valores sao nulos
+    del df_shap['']
+
+    # Variaveis qua nao serao utilizadas como variaveis x no SHAP
+    var = ["Reator|Tiristor", "Tipo", "Data", "Time", "Temperatura"]
+    
+    # Vamos acrescentar variaveis de controle para mes e periodo chuvoso
+    df_shap['Data'] = pd.to_datetime(df_shap['Data'],errors='coerce')
+    df_shap.loc[:,'Mes'] = df_shap['Data'].dt.month    
+    df_shap.loc[:,'Periodo Chuvoso'] = str(1)
+    df_shap.loc[:,'Periodo Chuvoso'] = (df_shap['Periodo Chuvoso']).case_when([((df_shap['Mes'] >= 3) & (df_shap['Mes'] <= 11), '0')])
+    df_shap.loc[:,'Mes'] = df_shap['Mes'].astype(str)
+    meses = pd.get_dummies(df_shap['Mes'])
+    df_shap = df_shap.drop('Mes',axis = 1)
+    df_shap = df_shap.join(meses)
+
+    # Vamos listar as variaveis que entram em target e features
+    y_var = ["Temperatura"]
+    x_vars = list(set(list(df_shap.columns)) ^ set(var))
+    
+    # Vamos calcular a previsao de temperatura para cada tipo de componente
+    temp_pred = []
+    for comp in list(set(df_shap["Reator|Tiristor"])):
+        train, test = df_shap[df_shap["Reator|Tiristor"] == comp].head(len(df_shap) - 1).copy(deep=True), df_shap[df_shap["Reator|Tiristor"] == comp].tail(1).copy(deep=True)
+        features_train, features_test = train[x_vars], test[x_vars]
+        target_train = train[y_var]
+        model = RandomForestRegressor()
+        model.fit(features_train, target_train.values.ravel())
+        prediction = model.predict(features_test)
+        df_pred = pd.DataFrame({'Data': test["Data"],'Tipo': [comp],'Temperatura esperada': prediction})
+        temp_pred.append(df_pred)
+    
+    # Por fim, criamos o dataframe com os valores de limite de temperatura
+    limite_alertas = pd.concat(temp_pred)
+
+    if flagCloud:
+        # Caminhos local e no GCS
+        local_excel_path = "/tmp/limite_alertas.xlsx"
+        gcs_excel_path = env["PATH_OUTPUTS"] + "limite_alertas.xlsx"
+
+        # Salva o DataFrame localmente
+        limite_alertas.to_excel(local_excel_path, index=False)
+
+        # Copia o arquivo local para o GCS
+        subprocess.run(["gsutil", "cp", local_excel_path, gcs_excel_path], check=True)
+    else:
+        limite_alertas.to_excel(env["PATH_OUTPUTS"] + "limite_alertas.xlsx")
+
 def rename_valvulas(df: pd.DataFrame) -> pd.DataFrame:
     """A funcao rename_valvulas modifica os nomes das valvulas de retangulo
     ou elipse para os nomes corretos utilizados na sala de valvulas. Tambem
@@ -594,6 +660,33 @@ def rename_valvulas(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+def select_max_column(df:pd.DataFrame) -> pd.DataFrame:
+    """A funcao select_max_column seleciona a temperatura que apresenta os valores
+    de temperatura maxima entre as variaveis de nome 1, 2 e 3. Ficam apenas as 
+    as variaveis componente e de valor maximo.
+    
+    args:
+        df: Base de dados com todos os valores de temperatura.
+        
+    returns:
+        df: Base de dados com os valores de temperatura maxima.
+    """
+    for name in [1,2,3]:
+        df[name] = df[name].astype(float)
+    
+    if (max(df[1]) > max(df[2])) & (max(df[1]) > max(df[3])):
+        df = df[[0,1,'Componente']]
+    elif (max(df[2]) > max(df[1])) & (max(df[2]) > max(df[3])):
+        df = df[[0,2,'Componente']]
+    elif (max(df[3]) > max(df[1])) & (max(df[3]) > max(df[2])):
+        df = df[[0,3,'Componente']]
+    
+    df.columns = [
+        "Data",
+        "Temp Maxima",
+        "Componente",
+    ]
+    return df
 
 def data_importing(data_folder: str, flagCloud: bool) -> pd.DataFrame:
     """A funcao data_import importa as bases de dados e sava em um único dataframe.
@@ -656,13 +749,8 @@ def data_importing(data_folder: str, flagCloud: bool) -> pd.DataFrame:
             df = pd.read_table(data_folder + file, header=None, delimiter=";")
             df["Componente"] = i
             df.reset_index(drop=True, inplace=True)
-            df.columns = [
-                "Data",
-                "Temp Maxima",
-                "Temp Media",
-                "Temp Minima",
-                "Componente",
-            ]
+            # Vamos selecionar dentre as colunas de temperatura apenas a maxima
+            df = select_max_column(df)
             df["Data original"] = df["Data"]
             # Vamos tirar os décimos de segundos
             type(df["Data"].iloc[0])
@@ -709,6 +797,10 @@ def data_importing(data_folder: str, flagCloud: bool) -> pd.DataFrame:
     # testando feature selection
     
     feature_selection(df_shap)
+    
+    # Cálculo do limite para o alerta de temperatura
+    
+    alerts_limits(df_shap, flagCloud=flagCloud)
 
     # Vamos calcular os shap values
 
