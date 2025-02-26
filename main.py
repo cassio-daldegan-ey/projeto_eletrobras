@@ -1,22 +1,19 @@
-"""
-
-Arquivo main, que executa em sequencias as etapas do modelo, desde o tratamento
-de dados até a previsao.
-
-"""
-
+import time
 import os
-from dotenv import load_dotenv
+import sys
+from pipeline import Pipeline
 
-load_dotenv(
-    "C:/Users/KG858HY/EY/Projeto Eletrobras/src_eletrobras/projeto_eletrobras/env"
-)
+start_time = time.time()
 
-os.chdir(os.getenv("PATH_SRC"))
+src_path = os.path.abspath(os.path.join(os.getcwd(), "../..", "hvdc"))
+sys.path.append(src_path)
 
-from data_processing import (
-    extracao_dados,
-    )
+# Cria uma instância do Pipeline e executa as etapas do modelo
+pipeline = Pipeline(env_path="env.json")
+df_output_hvdc = pipeline.run()
 
-df = extracao_dados(os.getenv("PATH_VIDEOS"))
-
+end_time = time.time()
+elapsed_time = end_time - start_time
+minutes = int(elapsed_time // 60)
+seconds = elapsed_time % 60
+print(f"Tempo de execução: {minutes} min {seconds:.2f} s")
